@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mitsubishi FX PLC Web HMI</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                        },
+                        industrial: {
+                            800: '#1e293b',
+                            900: '#0f172a',
+                            950: '#020617',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Custom Industrial Styling & Glassmorphism */
+        body {
+            background-color: #0b0f19;
+            color: #f1f5f9;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+        .panel-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        .led-indicator {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .led-on-green {
+            background-color: #22c55e;
+            box-shadow: 0 0 12px #22c55e, inset 0 0 4px #ffffff;
+        }
+        .led-off-green {
+            background-color: #14532d;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.6);
+            opacity: 0.4;
+        }
+        .led-on-red {
+            background-color: #ef4444;
+            box-shadow: 0 0 12px #ef4444, inset 0 0 4px #ffffff;
+        }
+        .led-off-red {
+            background-color: #7f1d1d;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.6);
+            opacity: 0.4;
+        }
+        .led-on-blue {
+            background-color: #3b82f6;
+            box-shadow: 0 0 12px #3b82f6, inset 0 0 4px #ffffff;
+        }
+        .led-off-blue {
+            background-color: #1e3a8a;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.6);
+            opacity: 0.4;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between p-3 md:p-6 text-slate-100">
+
+    <div class="max-w-7xl mx-auto w-full space-y-5">
+        
+        <!-- Header / Navigation -->
+        <header class="panel-card rounded-2xl p-4 md:p-5 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="bg-gradient-to-tr from-red-600 to-amber-500 p-2.5 rounded-xl shadow-lg">
+                    <i data-lucide="cpu" class="w-7 h-7 text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-wide text-white flex items-center gap-2">
+                        MITSUBISHI PLC HMI <span class="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">FX Series</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">RS-232C / RS-422 Serial Protocol Control Center (Web Serial API)</p>
+                </div>
+            </div>
+
+            <!-- Status Badges -->
+            <div class="flex items-center gap-3">
+                <div id="mode-badge" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    <i data-lucide="flask-conical" class="w-3.5 h-3.5"></i>
+                    <span>模擬模式 (Simulation)</span>
+                </div>
+                <div id="conn-badge" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                    <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+                    <span id="conn-text">未連線</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Grid Container -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            
+            <!-- Left Column: Serial Settings & Terminal (4 Cols) -->
+            <div class="lg:col-span-4 space-y-5">
+                
+                <!-- Serial Connection Configuration Card -->
+                <div class="panel-card rounded-2xl p-5 space-y-4">
+                    <div class="flex justify-between items-center border-b border-slate-700/60 pb-3">
+                        <h2 class="font-semibold text-slate-200 flex items-center gap-2">
+                            <i data-lucide="settings" class="w-4 h-4 text-sky-400"></i> 通訊埠設定 (Serial Port)
+                        </h2>
+                        <button id="toggle-sim-btn" class="text-xs text-slate-400 hover:text-amber-400 transition flex items-center gap-1">
+                            <i data-lucide="repeat" class="w-3.5 h-3.5"></i> 切換模擬
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">埠名稱 (Port)</label>
+                            <button id="connect-btn" class="w-full py-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg font-medium text-xs shadow-md transition flex items-center justify-center gap-1.5">
+                                <i data-lucide="plug" class="w-3.5 h-3.5"></i>
+                                <span id="connect-btn-text">選擇 Com Port</span>
+                            </button>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">波特率 (Baud Rate)</label>
+                            <select id="baud-rate" class="w-full bg-slate-900/90 border border-slate-700 text-slate-200 text-xs rounded-lg p-2 focus:ring-1 focus:ring-sky-500 focus:outline-none">
+                                <option value="9600" selected>9600</option>
+                                <option value="19200">19200</option>
+                                <option value="38400">38400</option>
+                                <option value="57600">57600</option>
+                                <option value="115200">115200</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">資料位 (Data Bits)</label>
+                            <select id="data-bits" class="w-full bg-slate-900/90 border border-slate-700 text-slate-200 text-xs rounded-lg p-2 focus:ring-1 focus:ring-sky-500 focus:outline-none">
+                                <option value="7" selected>7</option>
+                                <option value="8">8</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">校驗位 (Parity)</label>
+                            <select id="parity" class="w-full bg-slate-900/90 border border-slate-700 text-slate-200 text-xs rounded-lg p-2 focus:ring-1 focus:ring-sky-500 focus:outline-none">
+                                <option value="even" selected>Even (偶數)</option>
+                                <option value="odd">Odd (奇數)</option>
+                                <option value="none">None (無)</option>
+                            </select>
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-xs font-medium text-slate-400 mb-1">停止位 (Stop Bits)</label>
+                            <select id="stop-bits" class="w-full bg-slate-900/90 border border-slate-700 text-slate-200 text-xs rounded-lg p-2 focus:ring-1 focus:ring-sky-500 focus:outline-none">
+                                <option value="1" selected>1</option>
+                                <option value="2">2</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Line Signals Control Panel -->
+                    <div class="pt-2">
+                        <label class="block text-xs font-medium text-slate-400 mb-2">硬體信號 (Hardware Signals)</label>
+                        <div class="grid grid-cols-5 gap-1 text-center">
+                            <div class="bg-slate-900/60 p-1.5 rounded border border-slate-800">
+                                <div id="sig-ri" class="w-2.5 h-2.5 rounded-full led-off-green mx-auto mb-1"></div>
+                                <span class="text-[10px] text-slate-400 font-mono">RI</span>
+                            </div>
+                            <div class="bg-slate-900/60 p-1.5 rounded border border-slate-800">
+                                <div id="sig-dsr" class="w-2.5 h-2.5 rounded-full led-off-green mx-auto mb-1"></div>
+                                <span class="text-[10px] text-slate-400 font-mono">DSR</span>
+                            </div>
+                            <div class="bg-slate-900/60 p-1.5 rounded border border-slate-800">
+                                <div id="sig-cts" class="w-2.5 h-2.5 rounded-full led-off-green mx-auto mb-1"></div>
+                                <span class="text-[10px] text-slate-400 font-mono">CTS</span>
+                            </div>
+                            <button id="btn-dtr" class="bg-slate-800 hover:bg-slate-700 p-1.5 rounded border border-slate-700 transition">
+                                <div id="sig-dtr" class="w-2.5 h-2.5 rounded-full led-on-blue mx-auto mb-1"></div>
+                                <span class="text-[10px] text-slate-300 font-mono font-bold">DTR</span>
+                            </button>
+                            <button id="btn-rts" class="bg-slate-800 hover:bg-slate-700 p-1.5 rounded border border-slate-700 transition">
+                                <div id="sig-rts" class="w-2.5 h-2.5 rounded-full led-on-blue mx-auto mb-1"></div>
+                                <span class="text-[10px] text-slate-300 font-mono font-bold">RTS</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Polling & Interval Controls -->
+                    <div class="pt-3 border-t border-slate-700/60 flex items-center justify-between text-xs">
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="poll-enable" checked class="rounded bg-slate-900 border-slate-700 text-sky-500 focus:ring-0">
+                            <label for="poll-enable" class="text-slate-300 select-none">自動輪詢 (Polling)</label>
+                        </div>
+                        <div class="flex items-center space-x-1.5">
+                            <input type="number" id="poll-interval" value="200" min="50" max="2000" step="50" class="w-16 bg-slate-900 border border-slate-700 rounded text-center py-0.5 text-xs text-slate-200">
+                            <span class="text-slate-500">ms</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Serial Communications Log / Terminal -->
+                <div class="panel-card rounded-2xl p-4 space-y-2">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                            <i data-lucide="terminal" class="w-3.5 h-3.5 text-emerald-400"></i> 通訊封包紀錄 (Frame Log)
+                        </h3>
+                        <button id="clear-log-btn" class="text-[11px] text-slate-400 hover:text-slate-200 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 transition">
+                            清除紀錄
+                        </button>
+                    </div>
+                    <div id="serial-log" class="h-44 bg-slate-950/90 rounded-lg p-2.5 font-mono text-[11px] overflow-y-auto space-y-1 border border-slate-800/80">
+                        <div class="text-slate-500">[系統初始化] 準備就緒。點擊「選擇 Com Port」連線或直接在模擬模式進行測試。</div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Right Column: PLC I/O Controls (8 Cols) -->
+            <div class="lg:col-span-8 space-y-5">
+                
+                <!-- Input Points (X0 - X17 Octal Format) -->
+                <div class="panel-card rounded-2xl p-5 space-y-4">
+                    <div class="flex justify-between items-center border-b border-slate-700/60 pb-3">
+                        <div>
+                            <h2 class="font-semibold text-slate-200 flex items-center gap-2">
+                                <i data-lucide="arrow-down-left" class="w-4 h-4 text-emerald-400"></i> 輸入接點狀態 Monitor (X0 - X17)
+                            </h2>
+                            <p class="text-xs text-slate-400">Mitsubishi FX 八進制編號 (0-7, 10-17)</p>
+                        </div>
+                        <span class="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-md font-mono">16 Points</span>
+                    </div>
+
+                    <!-- Input Grid -->
+                    <div class="grid grid-cols-4 sm:grid-cols-8 gap-2.5">
+                        <!-- Inputs X0..X7, X10..X17 generated by JS -->
+                        <div id="inputs-container" class="col-span-full grid grid-cols-4 sm:grid-cols-8 gap-2.5"></div>
+                    </div>
+                </div>
+
+                <!-- Output Points (Y0 - Y17 Octal Format) -->
+                <div class="panel-card rounded-2xl p-5 space-y-4">
+                    <div class="flex justify-between items-center border-b border-slate-700/60 pb-3">
+                        <div>
+                            <h2 class="font-semibold text-slate-200 flex items-center gap-2">
+                                <i data-lucide="arrow-up-right" class="w-4 h-4 text-amber-400"></i> 輸出接點控制 Control (Y0 - Y17)
+                            </h2>
+                            <p class="text-xs text-slate-400">強制輸出切換 (Force Command Output)</p>
+                        </div>
+                        <!-- Mode Selector: Toggle vs Momentary -->
+                        <div class="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-lg border border-slate-800 text-xs">
+                            <button id="mode-toggle" class="px-2.5 py-1 rounded font-medium bg-indigo-600 text-white transition">切換 (Alternate)</button>
+                            <button id="mode-momentary" class="px-2.5 py-1 rounded font-medium text-slate-400 hover:text-slate-200 transition">點動 (Momentary)</button>
+                        </div>
+                    </div>
+
+                    <!-- Output Grid -->
+                    <div id="outputs-container" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+                </div>
+
+                <!-- Quick Action Bar & Presets -->
+                <div class="panel-card rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div class="flex items-center space-x-2 text-slate-400">
+                        <i data-lucide="info" class="w-4 h-4 text-sky-400"></i>
+                        <span>提示: 在模擬模式下，可以自由點擊 X 接點與 Y 按鈕驗證 HMI 邏輯。</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button id="reset-all-y" class="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg font-medium transition flex items-center gap-1">
+                            <i data-lucide="square" class="w-3.5 h-3.5"></i> 全部 Reset Y (OFF)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Debug & DevTools Console Panel -->
+                <div class="panel-card rounded-2xl p-4 bg-slate-900/90 border border-indigo-500/30 space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700/60 pb-2.5">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="bug" class="w-4 h-4 text-indigo-400"></i>
+                            <h3 class="text-xs font-bold text-slate-200">全域除錯工具 (Debug Console Table)</h3>
+                        </div>
+                        <button id="debug-table-btn" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium text-xs shadow-md transition flex items-center gap-1.5">
+                            <i data-lucide="table" class="w-3.5 h-3.5"></i>
+                            <span>執行 console.table(plcState)</span>
+                        </button>
+                    </div>
+                    <div class="text-xs text-slate-400 space-y-1 font-mono">
+                        <p class="text-indigo-300 font-semibold">💡 可以在瀏覽器 DevTools (F12 -> Console) 存取全域變數：</p>
+                        <div class="bg-slate-950/80 p-2 rounded border border-slate-800 text-[11px] text-slate-300 space-y-1">
+                            <div>• 查看整體狀態: <span class="text-amber-400 font-bold">console.table(plcState)</span> 或 <span class="text-amber-400 font-bold">console.table(window.plcState)</span></div>
+                            <div>• 僅查看 X 輸入: <span class="text-emerald-400 font-bold">console.table(plcState.X)</span></div>
+                            <div>• 僅查看 Y 輸出: <span class="text-rose-400 font-bold">console.table(plcState.Y)</span></div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="text-center text-xs text-slate-500 py-2 border-t border-slate-800/80">
+            Mitsubishi FX Series PLC Serial Communication Tool &copy; 2026 | Supports FX1N, FX2N, FX3U Dedicated Protocol
+        </footer>
+    </div>
+
+    <!-- JavaScript Application Logic -->
+    <script>
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        // Octal Mapping for Mitsubishi FX Series (16 points: 0-7, 10-17)
+        const OCTAL_ADDRESSES = ['0', '1', '2', '3', '4', '5', '6', '7', '10', '11', '12', '13', '14', '15', '16', '17'];
+        
+        // FX Protocol Commands Constants
+        const STX = '\x02'; // Start of text
+        const ETX = '\x03'; // End of text
+        const ACK = '\x06'; // Acknowledge
+        const NAK = '\x15'; // Negative acknowledge
+
+        // Global PLC State object accessible via Console (window.plcState)
+        window.plcState = {
+            X: {},
+            Y: {}
+        };
+
+        // Initialize state mappings
+        OCTAL_ADDRESSES.forEach(addr => {
+            window.plcState.X[`X${addr}`] = false;
+            window.plcState.Y[`Y${addr}`] = false;
+        });
+
+        // Application State
+        const state = {
+            isSimulation: true,
+            isConnected: false,
+            port: null,
+            reader: null,
+            writer: null,
+            pollTimer: null,
+            outputMode: 'alternate', // 'alternate' or 'momentary'
+            xStates: new Array(16).fill(false),
+            yStates: new Array(16).fill(false),
+            signals: {
+                dtr: true,
+                rts: true,
+                cts: false,
+                dsr: false,
+                ri: false
+            }
+        };
+
+        // DOM Elements References
+        const elements = {
+            inputsContainer: document.getElementById('inputs-container'),
+            outputsContainer: document.getElementById('outputs-container'),
+            connectBtn: document.getElementById('connect-btn'),
+            connectBtnText: document.getElementById('connect-btn-text'),
+            toggleSimBtn: document.getElementById('toggle-sim-btn'),
+            modeBadge: document.getElementById('mode-badge'),
+            connBadge: document.getElementById('conn-badge'),
+            connText: document.getElementById('conn-text'),
+            serialLog: document.getElementById('serial-log'),
+            clearLogBtn: document.getElementById('clear-log-btn'),
+            pollEnable: document.getElementById('poll-enable'),
+            pollInterval: document.getElementById('poll-interval'),
+            modeToggleBtn: document.getElementById('mode-toggle'),
+            modeMomentaryBtn: document.getElementById('mode-momentary'),
+            resetAllYBtn: document.getElementById('reset-all-y'),
+            debugTableBtn: document.getElementById('debug-table-btn'),
+            btnDtr: document.getElementById('btn-dtr'),
+            btnRts: document.getElementById('btn-rts'),
+            sigDtr: document.getElementById('sig-dtr'),
+            sigRts: document.getElementById('sig-rts'),
+            sigCts: document.getElementById('sig-cts'),
+            sigDsr: document.getElementById('sig-dsr'),
+            sigRi: document.getElementById('sig-ri')
+        };
+
+        // Render Input Point Cards (X0 - X17)
+        function renderInputs() {
+            elements.inputsContainer.innerHTML = '';
+            OCTAL_ADDRESSES.forEach((addr, idx) => {
+                const card = document.createElement('div');
+                card.className = 'bg-slate-900/80 border border-slate-800 rounded-xl p-2.5 flex flex-col items-center justify-between cursor-pointer hover:border-slate-700 transition select-none';
+                card.onclick = () => toggleInputSim(idx); // Click to simulate input toggling in sim mode
+
+                card.innerHTML = `
+                    <div class="flex items-center justify-between w-full mb-1">
+                        <span class="text-xs font-bold text-slate-300 font-mono">X${addr}</span>
+                        <div id="led-x-${idx}" class="w-3 h-3 rounded-full led-off-green"></div>
+                    </div>
+                    <span id="text-x-${idx}" class="text-[10px] font-mono text-slate-500 font-semibold">OFF</span>
+                `;
+                elements.inputsContainer.appendChild(card);
+            });
+        }
+
+        // Render Output Control Buttons & Monitors (Y0 - Y17)
+        function renderOutputs() {
+            elements.outputsContainer.innerHTML = '';
+            OCTAL_ADDRESSES.forEach((addr, idx) => {
+                const btn = document.createElement('div');
+                btn.className = 'bg-slate-900/90 border border-slate-800 hover:border-slate-700 rounded-xl p-3 flex flex-col justify-between space-y-2 select-none shadow-sm transition';
+                
+                btn.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-slate-200 font-mono">Y${addr}</span>
+                        <div id="led-y-${idx}" class="w-3.5 h-3.5 rounded-full led-off-red"></div>
+                    </div>
+                    <button id="btn-y-${idx}" 
+                            class="w-full py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg font-medium border border-slate-700 active:scale-95 transition flex items-center justify-center gap-1">
+                        <i data-lucide="power" class="w-3 h-3"></i>
+                        <span id="btn-text-y-${idx}">SET ON</span>
+                    </button>
+                `;
+                elements.outputsContainer.appendChild(btn);
+
+                // Add event listeners for Y control button
+                const actionBtn = document.getElementById(`btn-y-${idx}`);
+                
+                // Touch/Mouse down events for Momentary mode vs Click for Toggle
+                actionBtn.addEventListener('mousedown', () => handleYBtnDown(idx));
+                actionBtn.addEventListener('mouseup', () => handleYBtnUp(idx));
+                actionBtn.addEventListener('mouseleave', () => handleYBtnUp(idx));
+                
+                actionBtn.addEventListener('touchstart', (e) => { e.preventDefault(); handleYBtnDown(idx); });
+                actionBtn.addEventListener('touchend', (e) => { e.preventDefault(); handleYBtnUp(idx); });
+            });
+            lucide.createIcons();
+        }
+
+        // Update Input Displays (X)
+        function updateInputUI(index, active) {
+            state.xStates[index] = active;
+            const octAddr = OCTAL_ADDRESSES[index];
+            
+            // Sync to global window.plcState object
+            window.plcState.X[`X${octAddr}`] = active;
+
+            const led = document.getElementById(`led-x-${index}`);
+            const txt = document.getElementById(`text-x-${index}`);
+            if (led && txt) {
+                if (active) {
+                    led.className = 'w-3 h-3 rounded-full led-on-green';
+                    txt.innerText = 'ON';
+                    txt.className = 'text-[10px] font-mono text-emerald-400 font-bold';
+                } else {
+                    led.className = 'w-3 h-3 rounded-full led-off-green';
+                    txt.innerText = 'OFF';
+                    txt.className = 'text-[10px] font-mono text-slate-500 font-semibold';
+                }
+            }
+        }
+
+        // Update Output Displays (Y)
+        function updateOutputUI(index, active) {
+            state.yStates[index] = active;
+            const octAddr = OCTAL_ADDRESSES[index];
+
+            // Sync to global window.plcState object
+            window.plcState.Y[`Y${octAddr}`] = active;
+
+            const led = document.getElementById(`led-y-${index}`);
+            const btnText = document.getElementById(`btn-text-y-${index}`);
+            const btn = document.getElementById(`btn-y-${index}`);
+            
+            if (led && btnText && btn) {
+                if (active) {
+                    led.className = 'w-3.5 h-3.5 rounded-full led-on-red';
+                    btnText.innerText = 'RESET OFF';
+                    btn.className = 'w-full py-1.5 px-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs rounded-lg font-medium border border-red-500/40 active:scale-95 transition flex items-center justify-center gap-1';
+                } else {
+                    led.className = 'w-3.5 h-3.5 rounded-full led-off-red';
+                    btnText.innerText = 'SET ON';
+                    btn.className = 'w-full py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg font-medium border border-slate-700 active:scale-95 transition flex items-center justify-center gap-1';
+                }
+            }
+        }
+
+        // Output Button Interaction Handlers
+        function handleYBtnDown(index) {
+            if (state.outputMode === 'alternate') {
+                const newState = !state.yStates[index];
+                sendYCommand(index, newState);
+            } else if (state.outputMode === 'momentary') {
+                sendYCommand(index, true);
+            }
+        }
+
+        function handleYBtnUp(index) {
+            if (state.outputMode === 'momentary' && state.yStates[index]) {
+                sendYCommand(index, false);
+            }
+        }
+
+        // Send Command to Output Point Y
+        function sendYCommand(index, turnOn) {
+            const addrHex = (0x0500 + parseInt(OCTAL_ADDRESSES[index], 8)).toString(16).toUpperCase().padStart(4, '0');
+            const cmdType = turnOn ? '7' : '8'; // 7 = Force SET, 8 = Force RESET in FX protocol
+            
+            // Format: STX + Cmd + Address (4 bytes) + ETX + Checksum (2 bytes)
+            const rawCmd = `${cmdType}${addrHex.slice(2,4)}${addrHex.slice(0,2)}`;
+            const checksum = calculateChecksum(rawCmd + ETX);
+            const frame = `${STX}${rawCmd}${ETX}${checksum}`;
+
+            logSerial('TX', `Force Y${OCTAL_ADDRESSES[index]} -> ${turnOn ? 'ON' : 'OFF'} [${formatHexDisplay(frame)}]`);
+
+            if (state.isSimulation) {
+                setTimeout(() => {
+                    updateOutputUI(index, turnOn);
+                    logSerial('RX', `${ACK} (ACK - Sim Command Accepted)`);
+                }, 40);
+            } else {
+                writeToSerial(frame);
+            }
+        }
+
+        // Simulating Input toggle click in demo mode
+        function toggleInputSim(index) {
+            if (!state.isSimulation) return;
+            const newState = !state.xStates[index];
+            updateInputUI(index, newState);
+            logSerial('SIM', `Input X${OCTAL_ADDRESSES[index]} state changed to ${newState ? 'ON' : 'OFF'}`);
+        }
+
+        // Calculate Mitsubishi FX Protocol Checksum (2-digit Hex representation of sum % 256)
+        function calculateChecksum(str) {
+            let sum = 0;
+            for (let i = 0; i < str.length; i++) {
+                sum += str.charCodeAt(i);
+            }
+            const hex = (sum & 0xFF).toString(16).toUpperCase();
+            return hex.padStart(2, '0');
+        }
+
+        // Format Hex string for log output
+        function formatHexDisplay(str) {
+            return Array.from(str).map(c => {
+                const code = c.charCodeAt(0);
+                if (code === 2) return '<STX>';
+                if (code === 3) return '<ETX>';
+                if (code === 6) return '<ACK>';
+                if (code === 21) return '<NAK>';
+                return c;
+            }).join('');
+        }
+
+        // Log messages to Terminal Window
+        function logSerial(type, msg) {
+            const timeStr = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+            const item = document.createElement('div');
+            
+            let badgeClass = 'text-slate-400';
+            if (type === 'TX') badgeClass = 'text-sky-400 font-bold';
+            if (type === 'RX') badgeClass = 'text-emerald-400 font-bold';
+            if (type === 'SIM') badgeClass = 'text-amber-400';
+            if (type === 'ERR') badgeClass = 'text-rose-400 font-bold';
+
+            item.innerHTML = `<span class="text-slate-600">[${timeStr}]</span> <span class="${badgeClass}">${type}:</span> ${msg}`;
+            elements.serialLog.appendChild(item);
+            elements.serialLog.scrollTop = elements.serialLog.scrollHeight;
+        }
+
+        // Connect to Serial Port using Web Serial API
+        async function connectSerial() {
+            if (!('serial' in navigator)) {
+                alert('您的瀏覽器不支援 Web Serial API！請使用 Chrome、Edge 或 Opera 瀏覽器。');
+                return;
+            }
+
+            try {
+                // Request port from user
+                state.port = await navigator.serial.requestPort();
+                
+                // Read configuration options from dropdowns
+                const baudRate = parseInt(document.getElementById('baud-rate').value);
+                const dataBits = parseInt(document.getElementById('data-bits').value);
+                const parity = document.getElementById('parity').value;
+                const stopBits = parseInt(document.getElementById('stop-bits').value);
+
+                // Open serial port
+                await state.port.open({
+                    baudRate,
+                    dataBits,
+                    parity,
+                    stopBits
+                });
+
+                state.isConnected = true;
+                state.isSimulation = false;
+                updateModeBadges();
+                
+                elements.connectBtnText.innerText = '斷開 Serial 連線';
+                elements.connectBtn.className = 'w-full py-2 px-3 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-medium text-xs shadow-md transition flex items-center justify-center gap-1.5';
+                
+                logSerial('SYS', `已成功連接 Serial Port (${baudRate}, ${dataBits}, ${parity}, ${stopBits})`);
+
+                // Set hardware signal outputs
+                await state.port.setSignals({ dataTerminalReady: state.signals.dtr, requestToSend: state.signals.rts });
+
+                // Start reader loop
+                readSerialLoop();
+                startPolling();
+
+            } catch (err) {
+                logSerial('ERR', `連線失敗: ${err.message}`);
+                console.error(err);
+            }
+        }
+
+        // Disconnect Serial Port
+        async function disconnectSerial() {
+            stopPolling();
+            if (state.reader) {
+                await state.reader.cancel();
+            }
+            if (state.port) {
+                await state.port.close();
+                state.port = null;
+            }
+            state.isConnected = false;
+            state.isSimulation = true;
+            updateModeBadges();
+
+            elements.connectBtnText.innerText = '選擇 Com Port';
+            elements.connectBtn.className = 'w-full py-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg font-medium text-xs shadow-md transition flex items-center justify-center gap-1.5';
+            logSerial('SYS', 'Serial 連線已關閉，切換回模擬模式。');
+        }
+
+        // Read Loop for Serial Data
+        async function readSerialLoop() {
+            while (state.port && state.port.readable && state.isConnected) {
+                try {
+                    const textDecoder = new TextDecoderStream();
+                    const readableStreamClosed = state.port.readable.pipeTo(textDecoder.writable);
+                    state.reader = textDecoder.readable.getReader();
+
+                    let buffer = '';
+                    while (true) {
+                        const { value, done } = await state.reader.read();
+                        if (done) break;
+                        if (value) {
+                            buffer += value;
+                            if (buffer.includes(ETX) || buffer.includes(ACK) || buffer.includes(NAK)) {
+                                processIncomingFrame(buffer);
+                                buffer = '';
+                            }
+                        }
+                    }
+                } catch (err) {
+                    logSerial('ERR', `讀取錯誤: ${err.message}`);
+                    break;
+                }
+            }
+        }
+
+        // Write Frame to Serial
+        async function writeToSerial(data) {
+            if (!state.port || !state.port.writable) return;
+            try {
+                const textEncoder = new TextEncoderStream();
+                const writableStreamClosed = textEncoder.readable.pipeTo(state.port.writable);
+                const writer = textEncoder.writable.getWriter();
+                await writer.write(data);
+                await writer.close();
+            } catch (err) {
+                logSerial('ERR', `寫入錯誤: ${err.message}`);
+            }
+        }
+
+        // Process incoming frame from Mitsubishi PLC
+        function processIncomingFrame(frame) {
+            logSerial('RX', formatHexDisplay(frame));
+            // Read command response parsing logic for X0-X17 and Y0-Y17 state updates
+            if (frame.startsWith(STX) && frame.includes(ETX)) {
+                const data = frame.slice(1, frame.indexOf(ETX));
+                if (data.length >= 4) {
+                    // Convert Hex byte to state bits
+                    const byteVal = parseInt(data.slice(0, 2), 16);
+                    for (let i = 0; i < 8; i++) {
+                        const bit = (byteVal & (1 << i)) !== 0;
+                        updateInputUI(i, bit);
+                    }
+                }
+            }
+        }
+
+        // Send Periodic Polling Read Commands (Read X & Y states)
+        function pollPLC() {
+            if (state.isSimulation) {
+                // In simulation mode, simulate small random status fluctuations or maintain sync
+                return;
+            }
+
+            // Command: Read 2 bytes starting at X0 address (0x0080 in FX memory address map)
+            // STX + '0' (Read) + '0080' (Addr) + '02' (Length 2 bytes) + ETX + Sum
+            const cmd = `0008002`; 
+            const checksum = calculateChecksum(cmd + ETX);
+            const frame = `${STX}${cmd}${ETX}${checksum}`;
+
+            logSerial('TX', `Poll X/Y Status [${formatHexDisplay(frame)}]`);
+            writeToSerial(frame);
+        }
+
+        function startPolling() {
+            stopPolling();
+            if (elements.pollEnable.checked) {
+                const interval = parseInt(elements.pollInterval.value) || 200;
+                state.pollTimer = setInterval(pollPLC, interval);
+            }
+        }
+
+        function stopPolling() {
+            if (state.pollTimer) {
+                clearInterval(state.pollTimer);
+                state.pollTimer = null;
+            }
+        }
+
+        // Mode Display Update
+        function updateModeBadges() {
+            if (state.isSimulation) {
+                elements.modeBadge.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20';
+                elements.modeBadge.innerHTML = '<i data-lucide="flask-conical" class="w-3.5 h-3.5"></i><span>模擬模式 (Simulation)</span>';
+                
+                elements.connBadge.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700';
+                elements.connText.innerText = '未連線 (Offline)';
+            } else {
+                elements.modeBadge.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+                elements.modeBadge.innerHTML = '<i data-lucide="radio" class="w-3.5 h-3.5"></i><span>實體 PLC 通訊中</span>';
+                
+                elements.connBadge.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+                elements.connText.innerText = '已連線 (Online)';
+            }
+            lucide.createIcons();
+        }
+
+        // Attach Event Listeners
+        function initEvents() {
+            // Serial Connect Button Click
+            elements.connectBtn.onclick = () => {
+                if (state.isConnected) {
+                    disconnectSerial();
+                } else {
+                    connectSerial();
+                }
+            };
+
+            // Console table debug trigger
+            if (elements.debugTableBtn) {
+                elements.debugTableBtn.onclick = () => {
+                    console.clear();
+                    console.log('%c[Mitsubishi PLC FX HMI] Current I/O State Dump:', 'color: #38bdf8; font-weight: bold; font-size: 14px;');
+                    console.table(window.plcState);
+                    logSerial('SYS', '已在 Console 輸出 console.table(plcState) 表格！按 F12 開啟 DevTools 查看。');
+                };
+            }
+
+            // Toggle Simulation Button
+            elements.toggleSimBtn.onclick = () => {
+                if (state.isConnected) disconnectSerial();
+                state.isSimulation = !state.isSimulation;
+                updateModeBadges();
+                logSerial('SYS', `手動切換至 ${state.isSimulation ? '模擬模式' : '等待連線模式'}`);
+            };
+
+            // Clear Log
+            elements.clearLogBtn.onclick = () => {
+                elements.serialLog.innerHTML = '';
+            };
+
+            // Polling Enable Checkbox
+            elements.pollEnable.onchange = () => {
+                if (elements.pollEnable.checked && state.isConnected) {
+                    startPolling();
+                } else {
+                    stopPolling();
+                }
+            };
+
+            // Output Control Mode Selection (Toggle vs Momentary)
+            elements.modeToggleBtn.onclick = () => {
+                state.outputMode = 'alternate';
+                elements.modeToggleBtn.className = 'px-2.5 py-1 rounded font-medium bg-indigo-600 text-white transition';
+                elements.modeMomentaryBtn.className = 'px-2.5 py-1 rounded font-medium text-slate-400 hover:text-slate-200 transition';
+                logSerial('SYS', '切換輸出控制模式為: 交替模式 (Alternate/Toggle)');
+            };
+
+            elements.modeMomentaryBtn.onclick = () => {
+                state.outputMode = 'momentary';
+                elements.modeMomentaryBtn.className = 'px-2.5 py-1 rounded font-medium bg-indigo-600 text-white transition';
+                elements.modeToggleBtn.className = 'px-2.5 py-1 rounded font-medium text-slate-400 hover:text-slate-200 transition';
+                logSerial('SYS', '切換輸出控制模式為: 點動模式 (Momentary)');
+            };
+
+            // Reset All Y Outputs
+            elements.resetAllYBtn.onclick = () => {
+                OCTAL_ADDRESSES.forEach((_, idx) => {
+                    if (state.yStates[idx]) {
+                        sendYCommand(idx, false);
+                    }
+                });
+            };
+
+            // DTR / RTS Controls Toggle
+            elements.btnDtr.onclick = async () => {
+                state.signals.dtr = !state.signals.dtr;
+                elements.sigDtr.className = state.signals.dtr ? 'w-2.5 h-2.5 rounded-full led-on-blue mx-auto mb-1' : 'w-2.5 h-2.5 rounded-full led-off-blue mx-auto mb-1';
+                if (state.port && state.isConnected) {
+                    await state.port.setSignals({ dataTerminalReady: state.signals.dtr });
+                }
+            };
+
+            elements.btnRts.onclick = async () => {
+                state.signals.rts = !state.signals.rts;
+                elements.sigRts.className = state.signals.rts ? 'w-2.5 h-2.5 rounded-full led-on-blue mx-auto mb-1' : 'w-2.5 h-2.5 rounded-full led-off-blue mx-auto mb-1';
+                if (state.port && state.isConnected) {
+                    await state.port.setSignals({ requestToSend: state.signals.rts });
+                }
+            };
+        }
+
+        // Initialize App on DOM Load
+        window.addEventListener('DOMContentLoaded', () => {
+            renderInputs();
+            renderOutputs();
+            initEvents();
+            updateModeBadges();
+        });
+    </script>
+</body>
+</html>
